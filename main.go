@@ -35,17 +35,23 @@ func maskNumber(num string) string {
 	return num[:5] + "XXXX" + num[len(num)-2:]
 }
 
-// اے پی آئی مانیٹرنگ بمعہ ایرر اسکیپنگ
+// --- اے پی آئی چیک کرنے کا فنکشن ---
 func checkOTPs(cli *whatsmeow.Client) {
-	fmt.Println("🔍 [Monitoring] Checking all APIs...")
+	// اگر کلائنٹ ابھی کنیکٹ نہیں ہوا تو انتظار کریں
+	if cli == nil || !cli.IsConnected() {
+		fmt.Println("⏳ [Wait] Client not connected yet, skipping this cycle...")
+		return
+	}
+
+	fmt.Println("🔍 [Monitor] Starting API check cycle...")
 	
 	for _, url := range Config.OTPApiURLs {
-		fmt.Printf("🌐 [Request] Calling API: %s\n", url)
+		fmt.Printf("🌐 [Request] Calling: %s\n", url)
 		
-		httpClient := &http.Client{Timeout: 10 * time.Second}
+		httpClient := &http.Client{Timeout: 15 * time.Second}
 		resp, err := httpClient.Get(url)
 		if err != nil {
-			fmt.Printf("⚠️ [SKIP] API timeout/error for %s: %v\n", url, err)
+			fmt.Printf("⚠️ [SKIP] API error for %s: %v\n", url, err)
 			continue 
 		}
 
@@ -60,11 +66,10 @@ func checkOTPs(cli *whatsmeow.Client) {
 
 		aaData, ok := data["aaData"].([]interface{})
 		if !ok {
-			fmt.Printf("⚠️ [SKIP] No aaData found in %s\n", url)
+			fmt.Printf("⚠️ [SKIP] No data in %s\n", url)
 			continue
 		}
 
-		// API کا نام پہچاننا
 		apiName := "Server-1"
 		if strings.Contains(url, "kamibroken") { apiName = "Kami-Broken" }
 
@@ -74,7 +79,7 @@ func checkOTPs(cli *whatsmeow.Client) {
 
 			msgID := fmt.Sprintf("%v_%v", r[2], r[0])
 			if !lastProcessedIDs[msgID] {
-				fmt.Printf("📩 [New Message] Received from %s\n", apiName)
+				fmt.Printf("📩 [New OTP] Found message from %s for %v\n", apiName, r[2])
 				
 				rawTime, _ := r[0].(string)
 				countryInfo, _ := r[1].(string)
@@ -98,16 +103,22 @@ func checkOTPs(cli *whatsmeow.Client) {
 
 _Developed by Nothing Is Impossible_`, cFlag, strings.ToUpper(service), rawTime, countryWithFlag, maskNumber(phone), service, otpCode, apiName, fullMsg)
 
+				// چینلز پر سینڈ کرنا
 				for _, jidStr := range Config.OTPChannelIDs {
 					jid, err := types.ParseJID(jidStr)
-					if err != nil { continue }
+					if err != nil {
+						fmt.Printf("❌ [JID Error] Invalid ID %s: %v\n", jidStr, err)
+						continue
+					}
 					
-					fmt.Printf("📤 [Sending] To %s\n", jidStr)
+					fmt.Printf("📤 [Sending] Attempting to send to: %s\n", jidStr)
 					_, err = cli.SendMessage(context.Background(), jid, &waProto.Message{
 						Conversation: proto.String(strings.TrimSpace(messageBody)),
 					})
 					if err != nil {
 						fmt.Printf("❌ [Send Failed] Channel %s: %v\n", jidStr, err)
+					} else {
+						fmt.Printf("✅ [Success] OTP forwarded to %s\n", jidStr)
 					}
 				}
 				lastProcessedIDs[msgID] = true
@@ -116,7 +127,6 @@ _Developed by Nothing Is Impossible_`, cFlag, strings.ToUpper(service), rawTime,
 	}
 }
 
-// ایونٹ ہینڈلر (بغیر بٹنز کے - تاکہ بلڈ فیل نہ ہو)
 func eventHandler(evt interface{}) {
 	switch v := evt.(type) {
 	case *events.Message:
@@ -127,51 +137,55 @@ func eventHandler(evt interface{}) {
 			client.SendMessage(context.Background(), v.Info.Chat, &waProto.Message{
 				Conversation: proto.String(fmt.Sprintf("📍 Chat ID: `%s`", v.Info.Chat)),
 			})
-		} else if msgText == ".chk" || msgText == ".check" {
-			client.SendMessage(context.Background(), v.Info.Chat, &waProto.Message{
-				Conversation: proto.String("🧪 *Go Bot Online* 🟢\n\nStatus: Running (Lite Mode)\nNote: Buttons are disabled for stability."),
-			})
 		}
 	}
 }
 
 func main() {
-	fmt.Println("🚀 [System] Initializing...")
+	fmt.Println("🚀 [System] Initializing Kami OTP Bot...")
 	
 	dbLog := waLog.Stdout("Database", "INFO", true)
-	// فکسڈ: context.Background() شامل کر دیا گیا ہے
 	container, err := sqlstore.New(context.Background(), "sqlite3", "file:kami_bot.db?_foreign_keys=on", dbLog)
 	if err != nil { panic(err) }
 	
-	// فکسڈ: context.Background() شامل کر دیا گیا ہے
 	deviceStore, err := container.GetFirstDevice(context.Background())
 	if err != nil { panic(err) }
 
 	client = whatsmeow.NewClient(deviceStore, waLog.Stdout("Client", "INFO", true))
 	client.AddEventHandler(eventHandler)
 
+	// ہمیشہ کنیکٹ کریں
+	err = client.Connect()
+	if err != nil { panic(err) }
+
+	// اگر ڈیوائس رجسٹر نہیں ہے تو پیرنگ کوڈ دکھائیں
 	if client.Store.ID == nil {
-		err = client.Connect()
-		if err != nil { panic(err) }
-		fmt.Println("⏳ [Auth] Waiting for pairing code...")
-		// فکسڈ: تمام 5 آرگیومنٹس سیٹ ہیں
+		fmt.Println("⏳ [Auth] New session. Requesting Pairing Code...")
+		time.Sleep(3 * time.Second)
 		code, err := client.PairPhone(context.Background(), Config.OwnerNumber, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 		if err != nil { fmt.Printf("❌ [Error] %v\n", err); return }
 		fmt.Printf("\n🔑 PAIRING CODE: %s\n\n", code)
 	} else {
-		err = client.Connect()
-		if err != nil { panic(err) }
-		fmt.Println("✅ [Ready] Bot is online!")
-		go func() {
-			for {
-				checkOTPs(client)
-				time.Sleep(time.Duration(Config.Interval) * time.Second)
-			}
-		}()
+		fmt.Println("✅ [System] Existing session found. Logged in!")
 	}
+
+	// --- مانیٹرنگ لوپ (اب یہ ہر حال میں چلے گا) ---
+	go func() {
+		fmt.Println("⏰ [Scheduler] Monitoring loop started.")
+		for {
+			// صرف تب مانیٹر کریں جب لاگ ان ہو
+			if client.IsLoggedIn() {
+				checkOTPs(client)
+			} else {
+				fmt.Println("😴 [Status] Waiting for login to start monitoring...")
+			}
+			time.Sleep(time.Duration(Config.Interval) * time.Second)
+		}
+	}()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
+	fmt.Println("👋 [Shutting Down] Goodbye!")
 	client.Disconnect()
 }
