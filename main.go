@@ -25,19 +25,18 @@ import (
 var client *whatsmeow.Client
 var lastProcessedIDs = make(map[string]bool)
 
-// او ٹی پی نکالنے کا فنکشن
+// --- مددگار فنکشنز ---
 func extractOTP(msg string) string {
 	re := regexp.MustCompile(`\b\d{3,4}[-\s]?\d{3,4}\b|\b\d{4,8}\b`)
 	return re.FindString(msg)
 }
 
-// نمبر ماسکنگ
 func maskNumber(num string) string {
 	if len(num) < 7 { return num }
 	return num[:5] + "XXXX" + num[len(num)-2:]
 }
 
-// اے پی آئی مانیٹرنگ
+// --- اے پی آئی مانیٹرنگ (بغیر بٹنز کے - جیسا آپ نے کہا) ---
 func checkOTPs(cli *whatsmeow.Client) {
 	for _, url := range Config.OTPApiURLs {
 		resp, err := http.Get(url)
@@ -49,9 +48,6 @@ func checkOTPs(cli *whatsmeow.Client) {
 
 		aaData, ok := data["aaData"].([]interface{})
 		if !ok { continue }
-
-		apiName := "API 1"
-		if strings.Contains(url, "kamibroken") { apiName = "API 2" }
 
 		for _, row := range aaData {
 			r, ok := row.([]interface{})
@@ -69,31 +65,18 @@ func checkOTPs(cli *whatsmeow.Client) {
 				otpCode := extractOTP(fullMsg)
 
 				messageBody := fmt.Sprintf(`
-✨ *%s | %s New Message Received %s*⚡
+✨ *%s | %s New Message*⚡
+> ⏰ *Time:* _%s_
+> 🌍 *Country:* _%s_
+> 📞 *Number:* _%s_
+> ⚙️ *Service:* _%s_
+> 🔑 *OTP:* *%s*
 
-> ⏰   *`+"`Time`"+`   •   _%s_*
+📩 *Full Message:*
+"%s"
 
-> 🌍   *`+"`Country`"+`  ✓   _%s_*
-
-  📞   *`+"`Number`"+`  √   _%s_*
-
-> ⚙️   *`+"`Service`"+`  ©   _%s_*
-
-  🔑   *`+"`OTP`"+`  ~   _%s_*
-  
-> 📋   *`+"`Join For Numbers`"+`*
-  
-> https://chat.whatsapp.com/EbaJKbt5J2T6pgENIeFFht
-
-> 📩   `+"`Full Message`"+`
-
-> `+"`%s`"+`
-
-> Developed by Nothing Is Impossible
-
-> `+"`🙂MR~Bunny🙂`"+` `+"`💔Um@R💔`"+` `+"`👑Mohsin~King👑`"+` 
-> `+"`😎SK~SuFyAn😎`"+` `+"`😈SUDAIS~Ahmed👿`"+`
-`, cFlag, strings.ToUpper(service), apiName, rawTime, countryWithFlag, maskNumber(phone), service, otpCode, fullMsg)
+_Developed by Nothing Is Impossible_
+`, cFlag, strings.ToUpper(service), rawTime, countryWithFlag, maskNumber(phone), service, otpCode, fullMsg)
 
 				for _, jidStr := range Config.OTPChannelIDs {
 					jid, _ := types.ParseJID(jidStr)
@@ -107,7 +90,79 @@ func checkOTPs(cli *whatsmeow.Client) {
 	}
 }
 
-// ایونٹ ہینڈلر
+// --- بٹن ٹیسٹ کرنے کا مین فنکشن ---
+func sendTestButtons(cli *whatsmeow.Client, chat types.JID) {
+	fmt.Printf("🛠 [Test] Sending multiple button styles to %s...\n", chat)
+
+	// 1. ریپلائی بٹنز (Buttons Message - Legacy)
+	replyButtons := &waProto.ButtonsMessage{
+		ContentText: proto.String("Style 1: Quick Reply Buttons"),
+		HeaderType:  waProto.ButtonsMessage_EMPTY.Enum(),
+		Buttons: []*waProto.Button{
+			{ButtonId: proto.String("btn1"), ButtonText: &waProto.ButtonText{DisplayText: proto.String("Yes")}},
+			{ButtonId: proto.String("btn2"), ButtonText: &waProto.ButtonText{DisplayText: proto.String("No")}},
+		},
+	}
+
+	// 2. لسٹ بٹن (3-Line Button / List Message)
+	listMessage := &waProto.ListMessage{
+		Title:       proto.String("Style 2: List Options"),
+		Description: proto.String("Click the button below to see the list"),
+		ButtonText:  proto.String("Open Menu"),
+		ListType:    waProto.ListMessage_SINGLE_SELECT.Enum(),
+		Sections: []*waProto.ListSection{
+			{
+				Title: proto.String("Our Services"),
+				Rows: []*waProto.ListRow{
+					{Title: proto.String("Check ID"), RowId: proto.String("id_row"), Description: proto.String("Get current Chat ID")},
+					{Title: proto.String("Check Balance"), RowId: proto.String("bal_row")},
+				},
+			},
+		},
+	}
+
+	// 3. ماڈرن بٹنز (Interactive Native Flow - Call to Action)
+	interactiveMessage := &waProto.InteractiveMessage{
+		Header: &waProto.InteractiveMessage_Header{
+			Title: proto.String("Style 3: Native Flow Buttons"),
+		},
+		Body: &waProto.InteractiveMessage_Body{
+			Text: proto.String("Click below to Copy or Visit Link"),
+		},
+		InteractiveMessageConfig: &waProto.InteractiveMessage_NativeFlowMessage_{
+			NativeFlowMessage: &waProto.InteractiveMessage_NativeFlowMessage{
+				Buttons: []*waProto.InteractiveMessage_NativeFlowMessage_Button{
+					{
+						Name: proto.String("cta_copy"),
+						ButtonParamsJson: proto.String(`{"display_text":"Copy OTP Code","id":"copy_123","copy_code":"123-456"}`),
+					},
+					{
+						Name: proto.String("cta_url"),
+						ButtonParamsJson: proto.String(`{"display_text":"Join Group","url":"https://chat.whatsapp.com/EbaJKbt5J2T6pgENIeFFht"}`),
+					},
+				},
+			},
+		},
+	}
+
+	// تمام باری باری بھیجیں اور پرنٹ کریں
+	messages := []*waProto.Message{
+		{ButtonsMessage: replyButtons},
+		{ListMessage: listMessage},
+		{ViewOnceMessage: &waProto.ViewOnceMessage{Message: &waProto.Message{InteractiveMessage: interactiveMessage}}},
+	}
+
+	for i, msg := range messages {
+		resp, err := cli.SendMessage(context.Background(), chat, msg)
+		if err != nil {
+			fmt.Printf("❌ [Button %d Error]: %v\n", i+1, err)
+		} else {
+			fmt.Printf("✅ [Button %d Success]: Message ID %s sent\n", i+1, resp.ID)
+		}
+	}
+}
+
+// --- ایونٹ ہینڈلر ---
 func eventHandler(evt interface{}) {
 	switch v := evt.(type) {
 	case *events.Message:
@@ -115,50 +170,43 @@ func eventHandler(evt interface{}) {
 		if msgText == "" { msgText = v.Message.GetExtendedTextMessage().GetText() }
 
 		if msgText == ".id" {
+			fmt.Printf("📩 [Command] .id from %s\n", v.Info.Chat)
 			client.SendMessage(context.Background(), v.Info.Chat, &waProto.Message{
 				Conversation: proto.String(fmt.Sprintf("📍 *Chat ID:* `%s`", v.Info.Chat)),
 			})
 		} else if msgText == ".chk" || msgText == ".check" {
-			client.SendMessage(context.Background(), v.Info.Chat, &waProto.Message{
-				Conversation: proto.String("🧪 *Go Bot Online* ⚡\n\nStatus: Active 🟢"),
-			})
+			sendTestButtons(client, v.Info.Chat)
 		}
 	}
 }
 
 func main() {
-	dbLog := waLog.Stdout("Database", "INFO", true)
+	fmt.Println("🚀 [System] Starting Kami OTP Bot with Button Lab...")
 	
-	// فکسڈ: sqlstore.New اب 4 آرگیومنٹس لیتا ہے (context پہلا ہے)
+	dbLog := waLog.Stdout("Database", "INFO", true)
 	container, err := sqlstore.New(context.Background(), "sqlite3", "file:kami_bot.db?_foreign_keys=on", dbLog)
 	if err != nil { panic(err) }
 	
-	// فکسڈ: GetFirstDevice اب 1 آرگیومنٹ (context) لیتا ہے
 	deviceStore, err := container.GetFirstDevice(context.Background())
 	if err != nil { panic(err) }
 
-	clientLog := waLog.Stdout("Client", "INFO", true)
-	client = whatsmeow.NewClient(deviceStore, clientLog)
+	client = whatsmeow.NewClient(deviceStore, waLog.Stdout("Client", "INFO", true))
 	client.AddEventHandler(eventHandler)
 
 	if client.Store.ID == nil {
 		err = client.Connect()
 		if err != nil { panic(err) }
-		
-		fmt.Println("⏳ Requesting Pairing Code for:", Config.OwnerNumber)
-		time.Sleep(3 * time.Second)
-		
-		// فکسڈ: PairPhone اب 5 آرگیومنٹس لیتا ہے
+		fmt.Println("⏳ [Pairing] Requesting Pairing Code...")
 		code, err := client.PairPhone(context.Background(), Config.OwnerNumber, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 		if err != nil {
-			fmt.Println("❌ Pairing Error:", err)
+			fmt.Printf("❌ [Error] %v\n", err)
 			return
 		}
-		fmt.Printf("\n🔑 YOUR PAIRING CODE: \033[1;32m%s\033[0m\n\n", code)
+		fmt.Printf("\n🔑 PAIRING CODE: %s\n\n", code)
 	} else {
 		err = client.Connect()
 		if err != nil { panic(err) }
-		fmt.Println("✅ Bot Connected Successfully!")
+		fmt.Println("✅ [System] Connected!")
 		go func() {
 			for {
 				checkOTPs(client)
