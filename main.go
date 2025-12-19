@@ -17,7 +17,6 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
-	"go.mau.fi/whatsmeow/types/events"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
@@ -59,6 +58,31 @@ func markAsSent(id string) {
 	_, _ = mongoColl.InsertOne(ctx, bson.M{"msg_id": id, "at": time.Now()})
 }
 
+// --- مددگار فنکشنز (فکسڈ) ---
+func extractOTP(msg string) string {
+	re := regexp.MustCompile(`\b\d{3,4}[-\s]?\d{3,4}\b|\b\d{4,8}\b`)
+	return re.FindString(msg)
+}
+
+func maskNumber(num string) string {
+	if len(num) < 7 {
+		return num
+	}
+	return num[:5] + "XXXX" + num[len(num)-2:]
+}
+
+func cleanCountryName(name string) string {
+	if name == "" {
+		return "Unknown"
+	}
+	firstPart := strings.Split(name, "-")[0]
+	words := strings.Fields(firstPart)
+	if len(words) > 0 {
+		return words[0]
+	}
+	return "Unknown"
+}
+
 // --- Monitoring Logic ---
 func checkOTPs(cli *whatsmeow.Client) {
 	for i, url := range Config.OTPApiURLs {
@@ -88,7 +112,7 @@ func checkOTPs(cli *whatsmeow.Client) {
 		}
 
 		if isFirstRun {
-			fmt.Printf("🚀 [First Run] Syncing %d old records from API %d\n", len(aaData), apiIdx)
+			fmt.Printf("🚀 [First Run] Syncing %d records from API %d\n", len(aaData), apiIdx)
 			for _, row := range aaData {
 				r := row.([]interface{})
 				msgID := fmt.Sprintf("%v_%v", r[2], r[0])
@@ -114,12 +138,12 @@ func checkOTPs(cli *whatsmeow.Client) {
 				service, _ := r[3].(string)
 				fullMsg, _ := r[4].(string)
 
-				cleanCountry := strings.Fields(strings.Split(countryRaw, "-")[0])[0]
+				cleanCountry := cleanCountryName(countryRaw)
 				cFlag, _ := GetCountryWithFlag(cleanCountry)
-				otpCode := regexp.MustCompile(`\b\d{3,4}[-\s]?\d{3,4}\b|\b\d{4,8}\b`).FindString(fullMsg)
+				otpCode := extractOTP(fullMsg)
 				flatMsg := strings.ReplaceAll(strings.ReplaceAll(fullMsg, "\n", " "), "\r", "")
 
-				// بیک ٹِکس (backticks) والے مسئلے کا حل: ان کو جوڑ کر (Concatenate) لکھا گیا ہے
+				// باڈی کو آپ کے ڈیزائن کے مطابق بنانے کے لیے بیک ٹِک متغیر
 				bt := "`"
 				messageBody := fmt.Sprintf("✨ *%s | %s Message %d*⚡\n"+
 					"> ⏰ %sTime%s ~ _%s_\n"+
@@ -132,7 +156,8 @@ func checkOTPs(cli *whatsmeow.Client) {
 					"> https://chat.whatsapp.com/EbaJKbt5J2T6pgENIeFFht\n"+
 					"> https://chat.whatsapp.com/L0Qk2ifxRFU3fduGA45osD\n"+
 					"📩 %sFull Msg%s\n"+
-					"> %s%s%s",
+					"> %s%s%s\n\n"+
+					"> Developed by Nothing Is Impossible",
 					cFlag, strings.ToUpper(service), apiIdx,
 					bt, bt, rawTime,
 					bt, bt, cFlag+" "+cleanCountry,
@@ -159,33 +184,33 @@ func checkOTPs(cli *whatsmeow.Client) {
 }
 
 func main() {
-	fmt.Println("🚀 [Init] Starting...")
+	fmt.Println("🚀 [Boot] Starting Kami OTP Bot...")
 	initMongoDB()
 
 	dbURL := os.Getenv("DATABASE_URL")
 	dbType := "postgres"
 
 	if dbURL == "" {
-		fmt.Println("ℹ️ No DATABASE_URL found, using local SQLite")
+		fmt.Println("ℹ️ No DATABASE_URL, using local SQLite")
 		dbURL = "file:kami_session.db?_foreign_keys=on"
 		dbType = "sqlite3"
 	}
 
 	dbLog := waLog.Stdout("Database", "INFO", true)
-	// فکسڈ: شروع میں context.Background() ایڈ کر دیا گیا ہے
 	container, err := sqlstore.New(context.Background(), dbType, dbURL, dbLog)
 	if err != nil {
-		fmt.Printf("❌ [DB Error] %v\n", err)
+		fmt.Printf("❌ [DB Error] Failed: %v\n", err)
 		return
 	}
 
-	// فکسڈ: GetFirstDevice میں context.Background() ایڈ کر دیا گیا ہے
 	deviceStore, err := container.GetFirstDevice(context.Background())
 	if err != nil {
 		panic(err)
 	}
 
 	client = whatsmeow.NewClient(deviceStore, waLog.Stdout("Client", "INFO", true))
+	
+	// خالی ایونٹ ہینڈلر تاکہ کریش نہ ہو
 	client.AddEventHandler(func(evt interface{}) {})
 
 	err = client.Connect()
@@ -195,7 +220,7 @@ func main() {
 
 	if client.Store.ID == nil {
 		code, _ := client.PairPhone(context.Background(), Config.OwnerNumber, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
-		fmt.Printf("\n🔑 PAIRING CODE: %s\n\n", code)
+		fmt.Printf("\n🔑 CODE: %s\n\n", code)
 	}
 
 	go func() {
@@ -203,7 +228,7 @@ func main() {
 			if client.IsLoggedIn() {
 				checkOTPs(client)
 			}
-			time.Sleep(5 * time.Second)
+			time.Sleep(3 * time.Second)
 		}
 	}()
 
