@@ -1,0 +1,21 @@
+package main
+
+var Config = struct {
+	OwnerNumber   string
+	BotName       string
+	OTPChannelIDs []string
+	OTPApiURLs    []string
+	Interval      int
+}{
+	OwnerNumber: "923027665767", // بغیر '+' کے
+	BotName:     "Kami OTP Monitor",
+	OTPChannelIDs: []string{
+		"120363423562861659@newsletter",
+		"120363421646654726@newsletter",
+	},
+	OTPApiURLs: []string{
+		"https://web-production-b717.up.railway.app/api?type=sms",
+		"https://www.kamibroken.pw/api/sms1?type=sms",
+	},
+	Interval: 15, // سیکنڈز
+}
