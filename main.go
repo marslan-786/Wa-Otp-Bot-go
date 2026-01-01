@@ -175,8 +175,14 @@ func checkOTPs(cli *whatsmeow.Client) {
 }
 
 // Event Handler
+// Event Handler
 func handler(evt interface{}) {
-	switch evt.(type) {
+	switch v := evt.(type) {
+	case *events.Message:
+		// Check if message is not from self (optional, but good practice)
+		if !v.Info.IsFromMe {
+			handleIDCommand(v)
+		}
 	case *events.LoggedOut:
 		fmt.Println("⚠️ [Warn] Logged out from WhatsApp!")
 	case *events.Disconnected:
@@ -185,6 +191,7 @@ func handler(evt interface{}) {
 		fmt.Println("✅ [Info] Connected to WhatsApp")
 	}
 }
+
 
 // ================= API ENDPOINTS =================
 
@@ -378,5 +385,46 @@ func main() {
 	fmt.Println("\n🛑 Shutting down...")
 	if client != nil {
 		client.Disconnect()
+	}
+}
+
+func handleIDCommand(evt *events.Message) {
+	// 1. Get Text Content
+	msgText := ""
+	if evt.Message.GetConversation() != "" {
+		msgText = evt.Message.GetConversation()
+	} else if evt.Message.ExtendedTextMessage != nil {
+		msgText = evt.Message.ExtendedTextMessage.GetText()
+	}
+
+	// 2. Check Command
+	if strings.TrimSpace(strings.ToLower(msgText)) == ".id" {
+		// Clean JIDs using ToNonAD() to avoid extra device info causing errors
+		senderJID := evt.Info.Sender.ToNonAD().String()
+		chatJID := evt.Info.Chat.ToNonAD().String()
+
+		// Build Response using Monospace format (` `) to prevent rendering issues
+		response := fmt.Sprintf("👤 *User ID:*\n`%s`\n\n📍 *Chat/Group ID:*\n`%s`", senderJID, chatJID)
+
+		// 3. Check for Quoted Message (Reply)
+		if evt.Message.ExtendedTextMessage != nil && evt.Message.ExtendedTextMessage.ContextInfo != nil {
+			quotedID := evt.Message.ExtendedTextMessage.ContextInfo.Participant
+			if quotedID != nil {
+				// Clean the quoted ID manually if needed or just print strictly
+				cleanQuoted := strings.Split(*quotedID, "@")[0] + "@" + strings.Split(*quotedID, "@")[1]
+				cleanQuoted = strings.Split(cleanQuoted, ":")[0] // Ensure no device ID
+				response += fmt.Sprintf("\n\n↩️ *Replied ID:*\n`%s`", cleanQuoted)
+			}
+		}
+
+		// 4. Send Message
+		if client != nil {
+			_, err := client.SendMessage(context.Background(), evt.Info.Chat, &waProto.Message{
+				Conversation: proto.String(response),
+			})
+			if err != nil {
+				fmt.Printf("❌ Failed to send ID: %v\n", err)
+			}
+		}
 	}
 }
