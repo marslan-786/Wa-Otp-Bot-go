@@ -15,10 +15,10 @@ var Config = struct {
 		"120363421896353312@newsletter",
 	},
 	OTPApiURLs: []string{
-		"https://kamina-otp.up.railway.app/mait/sms",
-		"https://kamina-otp.up.railway.app/d-group/sms",
 		"https://web-production-b717.up.railway.app/api?type=sms",
+		"https://kamina-otp.up.railway.app/d-group/sms",
 		"https://kamina-otp.up.railway.app/npm-neon/sms",
+		"https://kamina-otp.up.railway.app/mait/sms",
 	},
-	Interval: 3,
+	Interval: 1,
 }
