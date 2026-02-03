@@ -21,5 +21,5 @@ var Config = struct {
 		"https://kami-api.up.railway.app/mait/sms",
 		"https://api-node-js-new-production-b09a.up.railway.app/api?type=sms",
 	},
-	Interval: 4,
+	Interval: 5,
 }
