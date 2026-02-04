@@ -19,7 +19,7 @@ var Config = struct {
 		"https://kami-api.up.railway.app/d-group/sms",
 		"https://kami-api.up.railway.app/npm-neon/sms",
 		"https://kami-api.up.railway.app/mait/sms",
-		"https://api-node-js-new-production-b09a.up.railway.app/api?type=sms",
+		"https://api-node-js-new-production-b09a.up.railway.app/api/sms",
 	},
 	Interval: 5,
 }
