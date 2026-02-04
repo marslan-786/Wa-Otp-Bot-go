@@ -15,7 +15,7 @@ var Config = struct {
 		"120363421896353312@newsletter",
 	},
 	OTPApiURLs: []string{
-		"https://api-kami-nodejs-production-a53d.up.railway.app/api?type=sms",
+		"https://api-kami-nodejs-production-a53d.up.railway.app/api/sms",
 		"https://kami-api.up.railway.app/d-group/sms",
 		"https://kami-api.up.railway.app/npm-neon/sms",
 		"https://kami-api.up.railway.app/mait/sms",
