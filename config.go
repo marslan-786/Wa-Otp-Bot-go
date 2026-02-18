@@ -12,10 +12,9 @@ var Config = struct {
 	OTPChannelIDs: []string{
 		"120363423562861659@newsletter",
 		"120363421646654726@newsletter",
-		"120363421896353312@newsletter",
 	},
 	OTPApiURLs: []string{
-		"https://api-node-js-new-production-b09a.up.railway.app/api?type=sms",
+		"https://api-kami-nodejs-production-a53d.up.railway.app/api?type=sms",
 				"https://api-kami-nodejs-production-a53d.up.railway.app/api?type=sms",
 		"https://kami-api.up.railway.app/npm-neon/sms",
 		"https://kami-api.up.railway.app/mait/sms",
